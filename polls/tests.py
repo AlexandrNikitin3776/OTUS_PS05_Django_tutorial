@@ -58,15 +58,19 @@ class QuestionIndexViewTests(TestCase):
         """
         Questions with a pub_date in the past are displayed on the index page.
         """
-        create_question(question_text='Past question.', days=-30)
+        q = create_question(question_text='Past question.', days=-30)
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        q.choice_set.create(choice_text='Choice 2', votes=0)
         response = self.client.get(reverse('polls:index'))
         self.assertQuerysetEqual(response.context['latest_question_list'], ['<Question: Past question.>'])
 
-    def future_past_question(self):
+    def test_future_question(self):
         """
         Questions with a pub_date in the future aren't displayed on the index page.
         """
-        create_question(question_text='Future question.', days=30)
+        q = create_question(question_text='Future question.', days=30)
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        q.choice_set.create(choice_text='Choice 2', votes=0)
         response = self.client.get(reverse('polls:index'))
         self.assertQuerysetEqual(response.context['latest_question_list'], [])
 
@@ -74,8 +78,12 @@ class QuestionIndexViewTests(TestCase):
         """
         Even if both past and future questions exist, only past questions are displayed.
         """
-        create_question(question_text='Past question.', days=-30)
-        create_question(question_text='Future question.', days=30)
+        q1 = create_question(question_text='Past question.', days=-30)
+        q1.choice_set.create(choice_text='Choice 1', votes=0)
+        q1.choice_set.create(choice_text='Choice 2', votes=0)
+        q2 = create_question(question_text='Future question.', days=30)
+        q2.choice_set.create(choice_text='Choice 1', votes=0)
+        q2.choice_set.create(choice_text='Choice 2', votes=0)
         response = self.client.get(reverse('polls:index'))
         self.assertQuerysetEqual(response.context['latest_question_list'], ['<Question: Past question.>'])
 
@@ -83,10 +91,41 @@ class QuestionIndexViewTests(TestCase):
         """
         The questions index page may display multiple questions.
         """
-        create_question(question_text='Past question 1.', days=-30)
-        create_question(question_text='Past question 2.', days=-5)
+        q1 = create_question(question_text='Past question 1.', days=-30)
+        q1.choice_set.create(choice_text='Choice 1', votes=0)
+        q1.choice_set.create(choice_text='Choice 2', votes=0)
+        q2 = create_question(question_text='Past question 2.', days=-5)
+        q2.choice_set.create(choice_text='Choice 1', votes=0)
+        q2.choice_set.create(choice_text='Choice 2', votes=0)
         response = self.client.get(reverse('polls:index'))
         self.assertQuerysetEqual(response.context['latest_question_list'], ['<Question: Past question 2.>', '<Question: Past question 1.>'])
+
+    def test_question_without_choices(self):
+        """
+        Questions without choices aren't displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question without choices', pub_date=timezone.now())
+        response = self.client.get(reverse('polls:index'))
+        self.assertQuerysetEqual(response.context['latest_question_list'], [])
+
+    def test_question_with_one_choice(self):
+        """
+        Questions with one choice aren't displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with one choice', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        response = self.client.get(reverse('polls:index'))
+        self.assertQuerysetEqual(response.context['latest_question_list'], [])
+
+    def test_question_with_two_choices(self):
+        """
+        Questions with two and more choices are displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with two choices', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        q.choice_set.create(choice_text='Choice 2', votes=0)
+        response = self.client.get(reverse('polls:index'))
+        self.assertQuerysetEqual(response.context['latest_question_list'], ['<Question: Question with two choices>'])
 
 
 class QuestionDetailViewTests(TestCase):
@@ -95,6 +134,8 @@ class QuestionDetailViewTests(TestCase):
         The detail view of a question with a pub_date in the future returns a 404 not found.
         """
         future_question = create_question(question_text='Future question.', days=5)
+        future_question.choice_set.create(choice_text='Choice 1', votes=0)
+        future_question.choice_set.create(choice_text='Choice 2', votes=0)
         url = reverse('polls:detail', args=(future_question.id,))
         response = self.client.get(url)
         self.assertEqual(response.status_code, 404)
@@ -104,6 +145,74 @@ class QuestionDetailViewTests(TestCase):
         The detail view of a question with a pub_date in the past displays the  question text.
         """
         past_question = create_question(question_text='Past question.', days=-5)
+        past_question.choice_set.create(choice_text='Choice 1', votes=0)
+        past_question.choice_set.create(choice_text='Choice 2', votes=0)
         url = reverse('polls:detail', args=(past_question.id,))
         response = self.client.get(url)
         self.assertContains(response, past_question.question_text)
+
+    def test_question_with_one_choice(self):
+        """
+        Questions with one choice aren't displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with one choice', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        url = reverse('polls:detail', args=(q.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_question_with_two_choices(self):
+        """
+        Questions with two and more choices are displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with two choices', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        q.choice_set.create(choice_text='Choice 2', votes=0)
+        url = reverse('polls:detail', args=(q.id,))
+        response = self.client.get(url)
+        self.assertContains(response, q.question_text)
+
+
+class QuestionResultsViewTests(TestCase):
+    def test_future_question(self):
+        """
+        The results view of a question with a pub_date in the future returns a 404 not found.
+        """
+        future_question = create_question(question_text='Future question.', days=5)
+        future_question.choice_set.create(choice_text='Choice 1', votes=0)
+        future_question.choice_set.create(choice_text='Choice 2', votes=0)
+        url = reverse('polls:results', args=(future_question.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_past_question(self):
+        """
+        The results view of a question with a pub_date in the past displays the  question text.
+        """
+        past_question = create_question(question_text='Past question.', days=-5)
+        past_question.choice_set.create(choice_text='Choice 1', votes=0)
+        past_question.choice_set.create(choice_text='Choice 2', votes=0)
+        url = reverse('polls:results', args=(past_question.id,))
+        response = self.client.get(url)
+        self.assertContains(response, past_question.question_text)
+
+    def test_question_with_one_choice(self):
+        """
+        Questions with one choice aren't displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with one choice', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        url = reverse('polls:results', args=(q.id,))
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 404)
+
+    def test_question_with_two_choices(self):
+        """
+        Questions with two and more choices are displayed on the index page.
+        """
+        q = Question.objects.create(question_text='Question with two choices', pub_date=timezone.now())
+        q.choice_set.create(choice_text='Choice 1', votes=0)
+        q.choice_set.create(choice_text='Choice 2', votes=0)
+        url = reverse('polls:results', args=(q.id,))
+        response = self.client.get(url)
+        self.assertContains(response, q.question_text)
